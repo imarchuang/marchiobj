@@ -91,15 +91,36 @@ func (s *Server) handlePutObject(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleGetObject(w http.ResponseWriter, r *http.Request) {
 	bucket := r.PathValue("bucket")
 	key := r.PathValue("key")
-	meta, body, err := s.store.GetObject(bucket, key)
+	meta, f, err := s.store.OpenObject(bucket, key)
 	if err != nil {
 		writeStoreError(w, err)
 		return
 	}
-	defer body.Close()
+	defer f.Close()
+
+	start, end, hasRange, rangeErr := store.ParseByteRange(r.Header.Get("Range"), meta.Size)
+	if hasRange && errors.Is(rangeErr, store.ErrRangeUnsatisfiable) {
+		w.Header().Set("Content-Range", "bytes */"+strconv.FormatInt(meta.Size, 10))
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+		return
+	}
+
 	setObjectHeaders(w, meta)
+	w.Header().Set("Accept-Ranges", "bytes")
+	if hasRange {
+		n := end - start + 1
+		w.Header().Set("Content-Length", strconv.FormatInt(n, 10))
+		w.Header().Set("Content-Range", "bytes "+strconv.FormatInt(start, 10)+"-"+strconv.FormatInt(end, 10)+"/"+strconv.FormatInt(meta.Size, 10))
+		w.WriteHeader(http.StatusPartialContent)
+		if _, err := f.Seek(start, io.SeekStart); err != nil {
+			return
+		}
+		_, _ = io.CopyN(w, f, n)
+		return
+	}
 	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, body)
+	_, _ = io.Copy(w, f)
 }
 
 func (s *Server) handleHeadObject(w http.ResponseWriter, r *http.Request) {
