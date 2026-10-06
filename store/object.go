@@ -114,6 +114,14 @@ func (s *Store) HeadObject(bucket, key string) (*ObjectMeta, error) {
 }
 
 func (s *Store) GetObject(bucket, key string) (*ObjectMeta, io.ReadCloser, error) {
+	meta, f, err := s.OpenObject(bucket, key)
+	if err != nil {
+		return nil, nil, err
+	}
+	return meta, f, nil
+}
+
+func (s *Store) OpenObject(bucket, key string) (*ObjectMeta, *os.File, error) {
 	if err := ValidateKey(key); err != nil {
 		return nil, nil, err
 	}

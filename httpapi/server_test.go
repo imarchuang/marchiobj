@@ -238,3 +238,46 @@ func TestListObjectsHTTP(t *testing.T) {
 		t.Fatalf("delimiter %+v", delim)
 	}
 }
+
+func TestRangeGET(t *testing.T) {
+	srv := httptest.NewServer(newTestServer(t))
+	t.Cleanup(srv.Close)
+
+	putB, _ := http.NewRequest(http.MethodPut, srv.URL+"/buckets/logs", nil)
+	resB, _ := http.DefaultClient.Do(putB)
+	resB.Body.Close()
+
+	payload := []byte("hello object store")
+	put, _ := http.NewRequest(http.MethodPut, srv.URL+"/buckets/logs/objects/a.txt", bytes.NewReader(payload))
+	res, _ := http.DefaultClient.Do(put)
+	res.Body.Close()
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/buckets/logs/objects/a.txt", nil)
+	req.Header.Set("Range", "bytes=0-4")
+	got, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(got.Body)
+	got.Body.Close()
+	if got.StatusCode != http.StatusPartialContent {
+		t.Fatalf("status %d", got.StatusCode)
+	}
+	if string(body) != "hello" {
+		t.Fatalf("body %q", body)
+	}
+	if got.Header.Get("Content-Range") != "bytes 0-4/18" {
+		t.Fatalf("content-range %s", got.Header.Get("Content-Range"))
+	}
+
+	bad, _ := http.NewRequest(http.MethodGet, srv.URL+"/buckets/logs/objects/a.txt", nil)
+	bad.Header.Set("Range", "bytes=100-200")
+	res416, err := http.DefaultClient.Do(bad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res416.Body.Close()
+	if res416.StatusCode != http.StatusRequestedRangeNotSatisfiable {
+		t.Fatalf("expected 416 got %d", res416.StatusCode)
+	}
+}
