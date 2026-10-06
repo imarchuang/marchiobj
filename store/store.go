@@ -15,13 +15,15 @@ var (
 	ErrBucketExists   = errors.New("bucket already exists")
 	ErrBucketNotFound = errors.New("bucket not found")
 	ErrInvalidBucket  = errors.New("invalid bucket name")
+	ErrInvalidKey     = errors.New("invalid object key")
+	ErrObjectNotFound = errors.New("object not found")
 )
 
 var bucketNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`)
 
 type Store struct {
 	dataDir string
-	mu      sync.Mutex
+	mu      sync.RWMutex
 }
 
 type BucketInfo struct {
