@@ -191,3 +191,50 @@ func TestCreateBucketInvalid(t *testing.T) {
 		t.Fatalf("status %d", res.StatusCode)
 	}
 }
+
+func TestListObjectsHTTP(t *testing.T) {
+	srv := httptest.NewServer(newTestServer(t))
+	t.Cleanup(srv.Close)
+
+	putB, _ := http.NewRequest(http.MethodPut, srv.URL+"/buckets/pics", nil)
+	resB, _ := http.DefaultClient.Do(putB)
+	resB.Body.Close()
+
+	for _, k := range []string{"photos/a.jpg", "photos/b.jpg", "docs/x"} {
+		put, _ := http.NewRequest(http.MethodPut, srv.URL+"/buckets/pics/objects/"+k, bytes.NewReader([]byte(k)))
+		res, err := http.DefaultClient.Do(put)
+		if err != nil {
+			t.Fatal(err)
+		}
+		res.Body.Close()
+		if res.StatusCode != http.StatusOK {
+			t.Fatalf("put %s %d", k, res.StatusCode)
+		}
+	}
+
+	res, err := http.Get(srv.URL + "/buckets/pics/objects?prefix=photos/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res.Body.Close()
+	var listed store.ListResult
+	if err := json.NewDecoder(res.Body).Decode(&listed); err != nil {
+		t.Fatal(err)
+	}
+	if len(listed.Objects) != 2 {
+		t.Fatalf("prefix list %+v", listed)
+	}
+
+	res2, err := http.Get(srv.URL + "/buckets/pics/objects?delimiter=/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer res2.Body.Close()
+	var delim store.ListResult
+	if err := json.NewDecoder(res2.Body).Decode(&delim); err != nil {
+		t.Fatal(err)
+	}
+	if len(delim.CommonPrefixes) != 2 {
+		t.Fatalf("delimiter %+v", delim)
+	}
+}
