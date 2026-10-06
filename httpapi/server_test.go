@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -92,6 +93,87 @@ func TestCreateBucket(t *testing.T) {
 	}
 	if len(payload.Buckets) != 1 || payload.Buckets[0].Name != "logs" {
 		t.Fatalf("list: %+v", payload.Buckets)
+	}
+}
+
+func TestPutGetHeadDeleteObject(t *testing.T) {
+	srv := httptest.NewServer(newTestServer(t))
+	t.Cleanup(srv.Close)
+
+	putB, _ := http.NewRequest(http.MethodPut, srv.URL+"/buckets/photos", nil)
+	resB, err := http.DefaultClient.Do(putB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resB.Body.Close()
+	if resB.StatusCode != http.StatusCreated {
+		t.Fatalf("bucket %d", resB.StatusCode)
+	}
+
+	payload := []byte("hello object store")
+	put, _ := http.NewRequest(http.MethodPut, srv.URL+"/buckets/photos/objects/2026/a.txt", bytes.NewReader(payload))
+	res, err := http.DefaultClient.Do(put)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != http.StatusOK {
+		t.Fatalf("put %d %s", res.StatusCode, body)
+	}
+
+	get, err := http.Get(srv.URL + "/buckets/photos/objects/2026/a.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := io.ReadAll(get.Body)
+	get.Body.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if get.StatusCode != http.StatusOK {
+		t.Fatalf("get %d", get.StatusCode)
+	}
+	if !bytes.Equal(got, payload) {
+		t.Fatalf("bytes %q", got)
+	}
+	etag := get.Header.Get("ETag")
+	if etag == "" {
+		t.Fatal("missing etag")
+	}
+
+	head, err := http.Head(srv.URL + "/buckets/photos/objects/2026/a.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	head.Body.Close()
+	if head.StatusCode != http.StatusOK {
+		t.Fatalf("head %d", head.StatusCode)
+	}
+	if head.Header.Get("ETag") != etag {
+		t.Fatalf("head etag %s vs %s", head.Header.Get("ETag"), etag)
+	}
+	if head.ContentLength != int64(len(payload)) {
+		t.Fatalf("head length %d", head.ContentLength)
+	}
+
+	del, _ := http.NewRequest(http.MethodDelete, srv.URL+"/buckets/photos/objects/2026/a.txt", nil)
+	delRes, err := http.DefaultClient.Do(del)
+	if err != nil {
+		t.Fatal(err)
+	}
+	delRes.Body.Close()
+	if delRes.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete %d", delRes.StatusCode)
+	}
+
+	missing, err := http.Get(srv.URL + "/buckets/photos/objects/2026/a.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	missing.Body.Close()
+	if missing.StatusCode != http.StatusNotFound {
+		t.Fatalf("after delete %d", missing.StatusCode)
 	}
 }
 
