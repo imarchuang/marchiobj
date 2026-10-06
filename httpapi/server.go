@@ -23,6 +23,7 @@ func New(st *store.Store) *Server {
 	s.mux.HandleFunc("GET /buckets", s.handleListBuckets)
 	s.mux.HandleFunc("PUT /buckets/{bucket}/objects/{key...}", s.handlePutObject)
 	s.mux.HandleFunc("GET /buckets/{bucket}/objects/{key...}", s.handleGetObject)
+	s.mux.HandleFunc("GET /buckets/{bucket}/objects", s.handleListObjects)
 	s.mux.HandleFunc("HEAD /buckets/{bucket}/objects/{key...}", s.handleHeadObject)
 	s.mux.HandleFunc("DELETE /buckets/{bucket}/objects/{key...}", s.handleDeleteObject)
 	return s
@@ -63,6 +64,17 @@ func (s *Server) handleListBuckets(w http.ResponseWriter, _ *http.Request) {
 		list = []store.BucketInfo{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"buckets": list})
+}
+
+func (s *Server) handleListObjects(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+	q := r.URL.Query()
+	res, err := s.store.ListObjects(bucket, q.Get("prefix"), q.Get("delimiter"), store.ParseMaxKeys(q.Get("max-keys")))
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 func (s *Server) handlePutObject(w http.ResponseWriter, r *http.Request) {

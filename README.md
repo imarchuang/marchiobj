@@ -41,6 +41,7 @@ curl -s localhost:7300/buckets
 ```bash
 curl -s -X PUT localhost:7300/buckets/logs/objects/2026/a.txt -d hello
 curl -s localhost:7300/buckets/logs/objects/2026/a.txt
+curl -s 'localhost:7300/buckets/logs/objects?prefix=2026/'
 ```
 
 Flags: `-addr=:7300`, `-dataDir`.
