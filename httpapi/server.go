@@ -26,6 +26,10 @@ func New(st *store.Store) *Server {
 	s.mux.HandleFunc("GET /buckets/{bucket}/objects", s.handleListObjects)
 	s.mux.HandleFunc("HEAD /buckets/{bucket}/objects/{key...}", s.handleHeadObject)
 	s.mux.HandleFunc("DELETE /buckets/{bucket}/objects/{key...}", s.handleDeleteObject)
+	s.mux.HandleFunc("POST /buckets/{bucket}/uploads", s.handleInitMultipart)
+	s.mux.HandleFunc("PUT /uploads/{id}/parts/{n}", s.handlePutPart)
+	s.mux.HandleFunc("POST /uploads/{id}/complete", s.handleCompleteUpload)
+	s.mux.HandleFunc("DELETE /uploads/{id}", s.handleAbortUpload)
 	return s
 }
 
@@ -145,6 +149,48 @@ func (s *Server) handleDeleteObject(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (s *Server) handleInitMultipart(w http.ResponseWriter, r *http.Request) {
+	bucket := r.PathValue("bucket")
+	key := r.URL.Query().Get("key")
+	info, err := s.store.InitMultipart(bucket, key)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, info)
+}
+
+func (s *Server) handlePutPart(w http.ResponseWriter, r *http.Request) {
+	n, err := store.ParsePartNumber(r.PathValue("n"))
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	part, err := s.store.PutPart(r.PathValue("id"), n, r.Body)
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, part)
+}
+
+func (s *Server) handleCompleteUpload(w http.ResponseWriter, r *http.Request) {
+	meta, err := s.store.CompleteUpload(r.PathValue("id"))
+	if err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, meta)
+}
+
+func (s *Server) handleAbortUpload(w http.ResponseWriter, r *http.Request) {
+	if err := s.store.AbortUpload(r.PathValue("id")); err != nil {
+		writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func setObjectHeaders(w http.ResponseWriter, meta *store.ObjectMeta) {
 	w.Header().Set("ETag", `"`+meta.ETag+`"`)
 	w.Header().Set("Content-Length", strconv.FormatInt(meta.Size, 10))
@@ -154,11 +200,11 @@ func setObjectHeaders(w http.ResponseWriter, meta *store.ObjectMeta) {
 
 func writeStoreError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, store.ErrInvalidBucket), errors.Is(err, store.ErrInvalidKey):
+	case errors.Is(err, store.ErrInvalidBucket), errors.Is(err, store.ErrInvalidKey), errors.Is(err, store.ErrInvalidPart), errors.Is(err, store.ErrIncompleteMPU):
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 	case errors.Is(err, store.ErrBucketExists):
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
-	case errors.Is(err, store.ErrBucketNotFound), errors.Is(err, store.ErrObjectNotFound):
+	case errors.Is(err, store.ErrBucketNotFound), errors.Is(err, store.ErrObjectNotFound), errors.Is(err, store.ErrUploadNotFound):
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 	default:
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
