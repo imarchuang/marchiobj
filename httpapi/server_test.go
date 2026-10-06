@@ -339,3 +339,54 @@ func TestMultipartHTTP(t *testing.T) {
 		t.Fatalf("abort %d", dr.StatusCode)
 	}
 }
+
+func TestIfMatchIfNoneMatch(t *testing.T) {
+	srv := httptest.NewServer(newTestServer(t))
+	t.Cleanup(srv.Close)
+
+	putB, _ := http.NewRequest(http.MethodPut, srv.URL+"/buckets/logs", nil)
+	resB, _ := http.DefaultClient.Do(putB)
+	resB.Body.Close()
+
+	put, _ := http.NewRequest(http.MethodPut, srv.URL+"/buckets/logs/objects/k", bytes.NewReader([]byte("v1")))
+	res, err := http.DefaultClient.Do(put)
+	if err != nil {
+		t.Fatal(err)
+	}
+	res.Body.Close()
+	head, _ := http.Head(srv.URL + "/buckets/logs/objects/k")
+	etag := head.Header.Get("ETag")
+	head.Body.Close()
+
+	none, _ := http.NewRequest(http.MethodGet, srv.URL+"/buckets/logs/objects/k", nil)
+	none.Header.Set("If-None-Match", etag)
+	nres, _ := http.DefaultClient.Do(none)
+	nres.Body.Close()
+	if nres.StatusCode != http.StatusNotModified {
+		t.Fatalf("if-none-match get %d", nres.StatusCode)
+	}
+
+	badMatch, _ := http.NewRequest(http.MethodGet, srv.URL+"/buckets/logs/objects/k", nil)
+	badMatch.Header.Set("If-Match", `"deadbeef"`)
+	bres, _ := http.DefaultClient.Do(badMatch)
+	bres.Body.Close()
+	if bres.StatusCode != http.StatusPreconditionFailed {
+		t.Fatalf("if-match get %d", bres.StatusCode)
+	}
+
+	star, _ := http.NewRequest(http.MethodPut, srv.URL+"/buckets/logs/objects/k", bytes.NewReader([]byte("v2")))
+	star.Header.Set("If-None-Match", "*")
+	sres, _ := http.DefaultClient.Do(star)
+	sres.Body.Close()
+	if sres.StatusCode != http.StatusPreconditionFailed {
+		t.Fatalf("if-none-match put %d", sres.StatusCode)
+	}
+
+	ok, _ := http.NewRequest(http.MethodPut, srv.URL+"/buckets/logs/objects/k", bytes.NewReader([]byte("v2")))
+	ok.Header.Set("If-Match", etag)
+	ores, _ := http.DefaultClient.Do(ok)
+	ores.Body.Close()
+	if ores.StatusCode != http.StatusOK {
+		t.Fatalf("if-match put %d", ores.StatusCode)
+	}
+}

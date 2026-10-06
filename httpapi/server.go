@@ -84,7 +84,7 @@ func (s *Server) handleListObjects(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handlePutObject(w http.ResponseWriter, r *http.Request) {
 	bucket := r.PathValue("bucket")
 	key := r.PathValue("key")
-	meta, err := s.store.PutObject(bucket, key, r.Body)
+	meta, err := s.store.PutObjectCond(bucket, key, r.Body, store.CondFromHeader(r.Header))
 	if err != nil {
 		writeStoreError(w, err)
 		return
@@ -101,6 +101,15 @@ func (s *Server) handleGetObject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer f.Close()
+	if err := store.CheckReadCond(meta, store.CondFromHeader(r.Header)); err != nil {
+		if errors.Is(err, store.ErrNotModified) {
+			setObjectHeaders(w, meta)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		writeStoreError(w, err)
+		return
+	}
 
 	start, end, hasRange, rangeErr := store.ParseByteRange(r.Header.Get("Range"), meta.Size)
 	if hasRange && errors.Is(rangeErr, store.ErrRangeUnsatisfiable) {
@@ -135,6 +144,15 @@ func (s *Server) handleHeadObject(w http.ResponseWriter, r *http.Request) {
 		writeStoreError(w, err)
 		return
 	}
+	if err := store.CheckReadCond(meta, store.CondFromHeader(r.Header)); err != nil {
+		if errors.Is(err, store.ErrNotModified) {
+			setObjectHeaders(w, meta)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		writeStoreError(w, err)
+		return
+	}
 	setObjectHeaders(w, meta)
 	w.WriteHeader(http.StatusOK)
 }
@@ -142,7 +160,7 @@ func (s *Server) handleHeadObject(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleDeleteObject(w http.ResponseWriter, r *http.Request) {
 	bucket := r.PathValue("bucket")
 	key := r.PathValue("key")
-	if err := s.store.DeleteObject(bucket, key); err != nil {
+	if err := s.store.DeleteObjectCond(bucket, key, store.CondFromHeader(r.Header)); err != nil {
 		writeStoreError(w, err)
 		return
 	}
@@ -206,6 +224,10 @@ func writeStoreError(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
 	case errors.Is(err, store.ErrBucketNotFound), errors.Is(err, store.ErrObjectNotFound), errors.Is(err, store.ErrUploadNotFound):
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+	case errors.Is(err, store.ErrPrecondition):
+		writeJSON(w, http.StatusPreconditionFailed, map[string]string{"error": err.Error()})
+	case errors.Is(err, store.ErrNotModified):
+		w.WriteHeader(http.StatusNotModified)
 	default:
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}

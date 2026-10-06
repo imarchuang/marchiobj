@@ -8,7 +8,8 @@ JSON HTTP, not AWS XML.
 
 **Not MinIO / not AWS.** One disk, no IAM, no erasure coding.
 
-See [PLAN.md](PLAN.md) for the MVP slices.
+See [PLAN.md](PLAN.md) for the MVP slices and [OBJECTSTORE.md](OBJECTSTORE.md)
+for layout, atomic PUT, Range GET, and multipart complete.
 
 ---
 
@@ -24,24 +25,19 @@ go run ./cmd/marchiobj -dataDir=./data -addr=:7300
 **Docker:**
 
 ```bash
-docker build -t marchiobj .
-docker run --rm -p 7300:7300 -v "$PWD/data:/data" marchiobj
+docker compose up --build
+# listens on http://localhost:7300
 ```
 
-**Health + create a bucket:**
+**Demo:**
 
 ```bash
 curl -s localhost:7300/healthz
 curl -s -X PUT localhost:7300/buckets/logs
-curl -s localhost:7300/buckets
-```
-
-**Put and get an object:**
-
-```bash
 curl -s -X PUT localhost:7300/buckets/logs/objects/2026/a.txt -d hello
 curl -s localhost:7300/buckets/logs/objects/2026/a.txt
 curl -s 'localhost:7300/buckets/logs/objects?prefix=2026/'
+curl -s -D- -o /dev/null -H 'Range: bytes=0-4' localhost:7300/buckets/logs/objects/2026/a.txt
 ```
 
 Flags: `-addr=:7300`, `-dataDir`.
