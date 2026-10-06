@@ -17,6 +17,9 @@ var (
 	ErrInvalidBucket  = errors.New("invalid bucket name")
 	ErrInvalidKey     = errors.New("invalid object key")
 	ErrObjectNotFound = errors.New("object not found")
+	ErrUploadNotFound = errors.New("upload not found")
+	ErrInvalidPart    = errors.New("invalid part number")
+	ErrIncompleteMPU  = errors.New("incomplete multipart upload")
 )
 
 var bucketNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`)
@@ -33,6 +36,9 @@ type BucketInfo struct {
 
 func Open(dataDir string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Join(dataDir, "buckets"), 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Join(dataDir, "upload-index"), 0o755); err != nil {
 		return nil, err
 	}
 	return &Store{dataDir: dataDir}, nil

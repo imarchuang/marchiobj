@@ -281,3 +281,61 @@ func TestRangeGET(t *testing.T) {
 		t.Fatalf("expected 416 got %d", res416.StatusCode)
 	}
 }
+
+func TestMultipartHTTP(t *testing.T) {
+	srv := httptest.NewServer(newTestServer(t))
+	t.Cleanup(srv.Close)
+
+	putB, _ := http.NewRequest(http.MethodPut, srv.URL+"/buckets/logs", nil)
+	resB, _ := http.DefaultClient.Do(putB)
+	resB.Body.Close()
+
+	initRes, err := http.Post(srv.URL+"/buckets/logs/uploads?key=m.bin", "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var up store.UploadInfo
+	if err := json.NewDecoder(initRes.Body).Decode(&up); err != nil {
+		t.Fatal(err)
+	}
+	initRes.Body.Close()
+	if up.UploadID == "" {
+		t.Fatal("no upload id")
+	}
+
+	p1, _ := http.NewRequest(http.MethodPut, srv.URL+"/uploads/"+up.UploadID+"/parts/1", bytes.NewReader([]byte("aa")))
+	r1, _ := http.DefaultClient.Do(p1)
+	r1.Body.Close()
+	p2, _ := http.NewRequest(http.MethodPut, srv.URL+"/uploads/"+up.UploadID+"/parts/2", bytes.NewReader([]byte("bb")))
+	r2, _ := http.DefaultClient.Do(p2)
+	r2.Body.Close()
+
+	done, err := http.Post(srv.URL+"/uploads/"+up.UploadID+"/complete", "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done.Body.Close()
+	if done.StatusCode != http.StatusOK {
+		t.Fatalf("complete %d", done.StatusCode)
+	}
+	get, _ := http.Get(srv.URL + "/buckets/logs/objects/m.bin")
+	body, _ := io.ReadAll(get.Body)
+	get.Body.Close()
+	if string(body) != "aabb" {
+		t.Fatalf("got %q", body)
+	}
+
+	init2, _ := http.Post(srv.URL+"/buckets/logs/uploads?key=z.bin", "application/json", nil)
+	var up2 store.UploadInfo
+	json.NewDecoder(init2.Body).Decode(&up2)
+	init2.Body.Close()
+	p, _ := http.NewRequest(http.MethodPut, srv.URL+"/uploads/"+up2.UploadID+"/parts/1", bytes.NewReader([]byte("x")))
+	pr, _ := http.DefaultClient.Do(p)
+	pr.Body.Close()
+	del, _ := http.NewRequest(http.MethodDelete, srv.URL+"/uploads/"+up2.UploadID, nil)
+	dr, _ := http.DefaultClient.Do(del)
+	dr.Body.Close()
+	if dr.StatusCode != http.StatusNoContent {
+		t.Fatalf("abort %d", dr.StatusCode)
+	}
+}
