@@ -20,6 +20,8 @@ var (
 	ErrUploadNotFound = errors.New("upload not found")
 	ErrInvalidPart    = errors.New("invalid part number")
 	ErrIncompleteMPU  = errors.New("incomplete multipart upload")
+	ErrPrecondition   = errors.New("precondition failed")
+	ErrNotModified    = errors.New("not modified")
 )
 
 var bucketNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$`)

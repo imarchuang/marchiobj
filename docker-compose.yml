@@ -1,0 +1,12 @@
+services:
+  marchiobj:
+    build: .
+    image: marchiobj:local
+    ports:
+      - "7300:7300"
+    volumes:
+      - marchiobj-data:/data
+    command: ["-addr=:7300", "-dataDir=/data"]
+
+volumes:
+  marchiobj-data:

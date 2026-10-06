@@ -40,6 +40,10 @@ func (s *Store) blobPath(bucket, blobID string) string {
 }
 
 func (s *Store) PutObject(bucket, key string, r io.Reader) (*ObjectMeta, error) {
+	return s.PutObjectCond(bucket, key, r, Cond{})
+}
+
+func (s *Store) PutObjectCond(bucket, key string, r io.Reader, cond Cond) (*ObjectMeta, error) {
 	if err := ValidateKey(key); err != nil {
 		return nil, err
 	}
@@ -47,6 +51,10 @@ func (s *Store) PutObject(bucket, key string, r io.Reader) (*ObjectMeta, error) 
 	defer s.mu.Unlock()
 	if !s.bucketExistsLocked(bucket) {
 		return nil, ErrBucketNotFound
+	}
+	old, _ := s.readMetaLocked(bucket, key)
+	if err := CheckWriteCond(old, cond); err != nil {
+		return nil, err
 	}
 
 	blobDir := filepath.Join(s.bucketDir(bucket), "blobs")
@@ -80,7 +88,6 @@ func (s *Store) PutObject(bucket, key string, r io.Reader) (*ObjectMeta, error) 
 		return nil, err
 	}
 
-	old, _ := s.readMetaLocked(bucket, key)
 	meta := &ObjectMeta{
 		Key:    key,
 		BlobID: sum,
@@ -144,6 +151,10 @@ func (s *Store) OpenObject(bucket, key string) (*ObjectMeta, *os.File, error) {
 }
 
 func (s *Store) DeleteObject(bucket, key string) error {
+	return s.DeleteObjectCond(bucket, key, Cond{})
+}
+
+func (s *Store) DeleteObjectCond(bucket, key string, cond Cond) error {
 	if err := ValidateKey(key); err != nil {
 		return err
 	}
@@ -154,6 +165,9 @@ func (s *Store) DeleteObject(bucket, key string) error {
 	}
 	meta, err := s.readMetaLocked(bucket, key)
 	if err != nil {
+		return err
+	}
+	if err := CheckWriteCond(meta, cond); err != nil {
 		return err
 	}
 	if err := os.Remove(s.metaPath(bucket, key)); err != nil {
